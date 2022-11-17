@@ -1,2 +1,2 @@
-# MSPP
-Micrograph Segmentation using PixelPick
+# Micrograph Segmentation using PixelPick
+

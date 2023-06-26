@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import torch.nn.functional as F
 
 from args import Arguments
 from UNet import UNetVgg16
@@ -18,21 +19,22 @@ def eval_epoch(model, dataloader, n_classes, criterion, device, pred_dir=None):
         # forward
         outputs = model(inputs)
         loss = criterion(outputs, labels)
-        preds = outputs.detach().cpu().numpy().argmax(axis=1)
+        outputs = F.softmax(outputs, dim=1).cpu().numpy()
+        preds = outputs.argmax(axis=1)
         # measure
         loss_meter.update(loss.item(), inputs.size(0))
         score_meter.update(preds, labels.cpu().numpy())
         # save predicted results
         if pred_dir:
             assert preds.shape[0] == 1
-            np.save(f"{pred_dir}/{names[0].split('.')[0]}.npy",
-                    preds[0].astype(np.int8))
+            np.save(f"{pred_dir}/{names[0].split('.')[0]}.npy", preds[0].astype(np.int8))
+            np.save(f"{pred_dir}/{names[0].split('.')[0]}_prob.npy", outputs[0])
     scores = score_meter.get_scores()
     return loss_meter.avg, scores
 
 
 def evaluate(args, mode, save_pred=False):
-    _, val_loader, test_loader = get_dataloaders(args)
+    _, val_loader, test_loader = get_dataloaders(args, queries=None, is_train=False)
     if mode == 'val':
         dataloader = val_loader
     elif mode == 'test':

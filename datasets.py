@@ -15,21 +15,24 @@ class DatasetTemplate(data.Dataset):
     and segmentation labels. Labels are pre-stored as numpy array with data
     type np.int8. Subclasses should implement how to get self.img_names.
     """
-    def __init__(self, img_dir, label_dir, transform):
+    def __init__(self, img_dir, label_dir, transform, queries):
         """
         :param img_dir: the directory where the images are stored
         :param label_dir: the directory where the labels are stored
-        :param transform: the albumentations transformation applied to image and
-        label
+        :param transform: the albumentations transformation applied to image and label
+        :param queries: the mapping from image name to the information of queried pixels
         """
         self.img_dir, self.label_dir = img_dir, label_dir
         self.img_names = []
         self.transform = transform
+        self.queries = queries
 
     def __getitem__(self, index):
         img_name = self.img_names[index]
         img = self._get_image(img_name)
         label = self._get_label(img_name)
+        if self.queries is not None:
+            label = self._add_query(label, self.queries[img_name], ignore_index=-1)
         img, label = self._transform(img, label)
         return img, label, img_name
 
@@ -49,6 +52,15 @@ class DatasetTemplate(data.Dataset):
         label = np.load(label_dir).astype(np.int8)
         return label
 
+    def _add_query(self, label, query: List, ignore_index=-1):
+        label_flat = label.flatten()
+        query_flat = np.zeros_like(label_flat, dtype=np.bool).flatten()
+        query_flat[query] = True
+        label_flat[~query_flat] = ignore_index
+        label = label_flat.reshape(label.shape)
+        # if len(query) > 20: print(len(query))
+        return label
+
     def _transform(self, img, label):
         img = np.array(img)
         transformed = self.transform(image=img, mask=label)
@@ -65,9 +77,10 @@ class CSVSplitDataset(DatasetTemplate):
     def __init__(self,
                  img_dir: str,
                  label_dir: str,
+                 transform,
+                 queries,
                  split_csv: str,
                  split_num: Union[int, List[int]],
-                 transform,
                  split_col_name: str = "split",
                  reverse: bool = False):
         """
@@ -78,7 +91,7 @@ class CSVSplitDataset(DatasetTemplate):
         :param reverse: if True, the images without the split_num are selected,
         defaults to False
         """
-        super().__init__(img_dir, label_dir, transform)
+        super().__init__(img_dir, label_dir, transform, queries)
         if isinstance(split_num, (int, np.int64)):
             split_num = [split_num]
         df = pd.read_csv(split_csv)
@@ -92,13 +105,13 @@ class TextSplitDataset(DatasetTemplate):
     """A dataset class that reads a text split file containing the name of the
     images in the target dataset split.
     """
-    def __init__(self, img_dir, label_dir, split_txt, transform):
+    def __init__(self, img_dir, label_dir, transform, queries, split_txt):
         """
         :param split_txt: the path of the text file that contains the names of
         the images in the split
         """
-        super().__init__(img_dir, label_dir, transform)
-        self.img_names = np.loadtxt(split_txt, dtype=str, delimiter='\n', ndmin=1)
+        super().__init__(img_dir, label_dir, transform, queries)
+        self.img_names = np.loadtxt(split_txt, dtype=str, ndmin=1)
 
 
 class FolderDataset(DatasetTemplate):
@@ -106,8 +119,8 @@ class FolderDataset(DatasetTemplate):
     .tif, .jpg, .png are taken. If labels are not provided, the output label is
     -1 everywhere.
     """
-    def __init__(self, img_dir, label_dir, transform):
-        super().__init__(img_dir, label_dir, transform)
+    def __init__(self, img_dir, label_dir, transform, queries):
+        super().__init__(img_dir, label_dir, transform, queries)
         self.img_names = [name for name in os.listdir(self.img_dir)
                           if splitext(name)[1] in ['.tif', '.jpg', '.png']]
         self.no_label = label_dir is None
@@ -185,8 +198,8 @@ def visualize_augmentations(dataset, idx=0, n_samples=5):
     plt.show()
 
 
-def get_dataloaders(args):
-    transform_train = get_transform(args, is_train=True)
+def get_dataloaders(args, queries, is_train=True):
+    transform_train = get_transform(args, is_train=is_train)
     transform_eval = get_transform(args, is_train=False)
     s_info = args.split_info
     if s_info.type == "CSVSplit":
@@ -195,30 +208,27 @@ def get_dataloaders(args):
             train_split_num = [s_info.val_split_num, s_info.test_split_num]
         else:
             train_split_num = s_info.train_split_num
-        train_set = CSVSplitDataset(args.img_dir, args.label_dir,
+        train_set = CSVSplitDataset(args.img_dir, args.label_dir, transform_train, queries,
                                     split_csv=split_file_path,
                                     split_num=train_split_num,
-                                    transform=transform_train,
                                     split_col_name=s_info.split_col_name,
                                     reverse=s_info.train_reverse)
-        val_set = CSVSplitDataset(args.img_dir, args.label_dir,
+        val_set = CSVSplitDataset(args.img_dir, args.label_dir, transform_eval, queries=None,
                                   split_csv=split_file_path,
                                   split_num=s_info.val_split_num,
-                                  transform=transform_eval,
                                   split_col_name=s_info.split_col_name)
     elif s_info.type == "TextSplit":
         train_split_file_path = f"{args.dataset_root}/splits/{s_info.train_split_file}"
         val_split_file_path = f"{args.dataset_root}/splits/{s_info.val_split_file}"
-        train_set = TextSplitDataset(args.img_dir, args.label_dir,
-                                     split_txt=train_split_file_path,
-                                     transform=transform_train)
-        val_set = TextSplitDataset(args.img_dir, args.label_dir,
-                                   split_txt=val_split_file_path,
-                                   transform=transform_eval)
+        train_set = TextSplitDataset(args.img_dir, args.label_dir, transform_train, queries,
+                                     split_txt=train_split_file_path)
+        val_set = TextSplitDataset(args.img_dir, args.label_dir, transform_eval, queries=None,
+                                   split_txt=val_split_file_path)
     else:
         raise NotImplementedError(args.split_info.type)
 
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
+    batch_size = args.batch_size if is_train else 1
+    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_set, batch_size=1, shuffle=False)
 
     # get test dataloader
@@ -226,13 +236,15 @@ def get_dataloaders(args):
         test_set = val_set
     elif s_info.test_type == "TextSplit":
         split_file_path = f"{args.dataset_root}/splits/{s_info.test_split_file}"
-        test_set = TextSplitDataset(args.img_dir, args.label_dir, split_file_path, transform_eval)
+        test_set = TextSplitDataset(args.img_dir, args.label_dir, transform_eval, queries=None, split_txt=split_file_path)
     elif s_info.test_type == "CSVSplit":
         split_file_path = f"{args.dataset_root}/splits/{s_info.split_file}"
-        test_set = CSVSplitDataset(args.img_dir, args.label_dir, split_file_path,
-                                   s_info.test_split_num, transform_eval, s_info.split_col_name)
+        test_set = CSVSplitDataset(args.img_dir, args.label_dir, transform_eval, queries=None,
+                                   split_csv=split_file_path,
+                                   split_num=s_info.test_split_num,
+                                   split_col_name=s_info.split_col_name)
     elif s_info.test_type == "folder":
-        test_set = FolderDataset(s_info.test_img_dir, s_info.test_label_dir, transform_eval)
+        test_set = FolderDataset(s_info.test_img_dir, s_info.test_label_dir, transform_eval, queries=None)
     else:
         raise NotImplementedError(s_info.test_type)
     test_loader = DataLoader(test_set, batch_size=1, shuffle=False)
@@ -246,5 +258,5 @@ if __name__ == '__main__':
     parser = Arguments()
     args = parser.parse_args(use_random_seed=False)
     args.train_repeat = 1
-    train_loader, val_loader, test_loader = get_dataloaders(args)
+    train_loader, val_loader, test_loader = get_dataloaders(args, None)
     visualize_augmentations(train_loader.dataset, idx=0, n_samples=5)

@@ -1,4 +1,5 @@
 import time
+import torch
 
 from args import Arguments
 from UNet import UNetVgg16
@@ -7,11 +8,11 @@ from eval import eval_epoch
 from utils import AverageMeter, ScoreMeter, Recorder, ModelSaver, LRScheduler, get_optimizer, get_loss_fn
 
 
-def train(args):
+def train(args, queries=None, model=None):
     Arguments.save_args(args, args.args_path)
-    train_loader, val_loader, _ = get_dataloaders(args)
+    train_loader, val_loader, _ = get_dataloaders(args, queries)
     train_iter = iter(train_loader)
-    model = UNetVgg16(n_classes=args.n_classes).to(args.device)
+    model = UNetVgg16(n_classes=args.n_classes).to(args.device) if model is None else model
     optimizer = get_optimizer(args.optimizer, model)
     lr_scheduler = LRScheduler(args.lr_scheduler, optimizer)
     criterion = get_loss_fn(args.loss_type, args.ignore_index).to(args.device)
@@ -21,7 +22,7 @@ def train(args):
     start = time.time()
     loss_meter = AverageMeter()
     score_meter = ScoreMeter(args.n_classes)
-    print(f"number of batches in train dataloader: {len(train_loader)}")
+    model.train()
     for iter_i in range(args.n_train_iters):
         # infinite loop over train_loader
         try:
@@ -30,6 +31,7 @@ def train(args):
             train_iter = iter(train_loader)
             data = next(train_iter)
         inputs, labels, names = data
+        if labels.max() == -1: continue
         inputs, labels = inputs.to(args.device), labels.long().to(args.device)
         # forward
         outputs = model(inputs)

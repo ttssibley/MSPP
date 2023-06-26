@@ -17,6 +17,7 @@ class Arguments:
         parser.add_argument("--gpu_id", type=int, default=0)
         parser.add_argument("--seed", type=int, default=42)
         parser.add_argument("--redirect", action="store_true")
+        parser.add_argument("--debug", action="store_true")
         self.parser = parser
 
     def parse_args(self, verbose=False, use_random_seed=True):
@@ -44,7 +45,7 @@ class Arguments:
         args.label_dir = f"{args.dataset_root}/{args.label_folder}"
 
         args.experim_name = splitext(os.path.basename(args.config))[0]
-        checkpoints_dir = f"{args.root}/segmentation/checkpoints/{args.dataset}/{args.experim_name}"
+        checkpoints_dir = f"{args.root}/checkpoints/{args.dataset}/{args.experim_name}"
         self.update_checkpoints_dir(args, checkpoints_dir)
 
         if args.redirect:
@@ -71,6 +72,7 @@ class Arguments:
         args.val_result_path = f"{args.checkpoints_dir}/val_result.pkl"
         args.test_result_path = f"{args.checkpoints_dir}/test_result.pkl"
         args.pred_dir = f"{args.checkpoints_dir}/predictions"
+        args.query_file_path = f"{args.checkpoints_dir}/query.pkl"
         os.makedirs(args.pred_dir, exist_ok=True)
 
     @staticmethod

@@ -1,0 +1,5 @@
+max_pixels: 80
+n_pixels_per_round: 10
+n_init_pixels_per_class: 5
+query_strategy: random
+top_n_percent: 0

@@ -2,7 +2,7 @@
 dataset: uhcs
 img_folder: images
 label_folder: labels
-n_classes: 1
+n_classes: 4
 
 # train, validation and test split
 split_info:
@@ -37,7 +37,7 @@ augmentations:
   GaussNoise: { p: 0.1 }
 
 # training
-n_train_iters: 960
+n_train_iters: 1800
 val_interval: 120
 print_every_n_val: 1
 loss_type: CE

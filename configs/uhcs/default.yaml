@@ -2,7 +2,7 @@
 dataset: uhcs
 img_folder: images
 label_folder: labels
-n_classes: 4
+n_classes: 1
 
 # train, validation and test split
 split_info:
